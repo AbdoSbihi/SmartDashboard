@@ -1,36 +1,72 @@
+module SmartDashboard.Startup
+
 open System
+open System.Diagnostics
+open System.Runtime.InteropServices
 open Microsoft.AspNetCore.Builder
-open Microsoft.Extensions.Hosting
-open Microsoft.AspNetCore.Http
+open Microsoft.AspNetCore.Hosting
+open Microsoft.AspNetCore.StaticFiles
+open Microsoft.Extensions.Configuration
 open Microsoft.Extensions.DependencyInjection
+open Microsoft.Extensions.Hosting
 open WebSharper.AspNetCore
-open Project1
+
+type Startup(configuration: IConfiguration) =
+
+    member _.ConfigureServices(services: IServiceCollection) =
+        // Inject config into Server module so API keys can be read
+        Server.configure configuration
+        services
+            .AddSitelet(Site.Main)
+            .AddWebSharper()
+        |> ignore
+        services.AddRouting() |> ignore
+
+    member _.Configure(app: IApplicationBuilder, env: IWebHostEnvironment) =
+        if env.IsDevelopment() then
+            app.UseDeveloperExceptionPage() |> ignore
+
+        let defaultFiles = DefaultFilesOptions()
+        defaultFiles.DefaultFileNames.Clear()
+        defaultFiles.DefaultFileNames.Add("Main.html")
+        app.UseDefaultFiles(defaultFiles) |> ignore
+        app.UseStaticFiles() |> ignore
+        app.UseWebSharper()  |> ignore
+
+
+let openBrowser (url: string) =
+    try
+        if RuntimeInformation.IsOSPlatform(OSPlatform.Windows) then
+            Process.Start(ProcessStartInfo(url, UseShellExecute = true)) |> ignore
+        elif RuntimeInformation.IsOSPlatform(OSPlatform.OSX) then
+            Process.Start("open", url) |> ignore
+        else
+            Process.Start("xdg-open", url) |> ignore
+    with ex ->
+        printfn "Could not open browser: %s" ex.Message
+
 
 [<EntryPoint>]
-let main args =
-    let builder = WebApplication.CreateBuilder(args)
-    
-    // Add services to the container.
-    builder.Services.AddWebSharper()
-        .AddAuthentication("WebSharper")
-        .AddCookie("WebSharper", fun options -> ())
-    |> ignore
+let main argv =
+    let port = Environment.GetEnvironmentVariable("PORT")
+    let url  =
+        if port <> null then sprintf "http://0.0.0.0:%s" port
+        else "http://localhost:5000"
 
-    let app = builder.Build()
+    let host =
+        Host.CreateDefaultBuilder(argv)
+            .ConfigureWebHostDefaults(fun webBuilder ->
+                webBuilder.UseStartup<Startup>() |> ignore
+                webBuilder.UseUrls(url) |> ignore
+            )
+            .Build()
 
-    // Configure the HTTP request pipeline.
-    if not (app.Environment.IsDevelopment()) then
-        app.UseExceptionHandler("/Error")
-            // The default HSTS value is 30 days. You may want to change this for production scenarios, see https://aka.ms/aspnetcore-hsts.
-            .UseHsts()
-        |> ignore
+    host.Start()
 
-    app.UseHttpsRedirection()
-        .UseAuthentication()
-        .UseStaticFiles()
-        .UseWebSharper(fun ws -> ws.Sitelet(Site.Main) |> ignore)
-    |> ignore
+    if port = null then
+        Threading.Thread.Sleep(500)
+        openBrowser url
 
-    app.Run()
-
-    0 // Exit code
+    printfn "SmartDashboard running at %s" url
+    host.WaitForShutdown()
+    0

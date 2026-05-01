@@ -1,0 +1,1 @@
+I have been working in this project for a week now from today(01/05/2025) , but i encounter a problem between visual studio and GitHub that i had to delete the whole repository and make a new one
